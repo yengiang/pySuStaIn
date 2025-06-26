@@ -553,7 +553,7 @@ class AbstractSustain(ABC):
             total_prob_subtype_stage        = self._calculate_likelihood(sustainData, this_S, this_f)
 
             total_prob_subtype              = total_prob_subtype.reshape(len(total_prob_subtype), N_S)
-            total_prob_subtype_norm         = total_prob_subtype        / np.tile(np.sum(total_prob_subtype, 1).reshape(len(total_prob_subtype), 1),        (1, N_S))
+            total_prob_subtype_norm         = total_prob_subtype        / (np.tile(np.sum(total_prob_subtype, 1).reshape(len(total_prob_subtype), 1),        (1, N_S)) + 1e-250)
             total_prob_stage_norm           = total_prob_stage          / np.tile(np.sum(total_prob_stage, 1).reshape(len(total_prob_stage), 1),          (1, nStages + 1)) #removed total_prob_subtype
 
             #total_prob_subtype_stage_norm   = total_prob_subtype_stage  / np.tile(np.sum(np.sum(total_prob_subtype_stage, 1), 1).reshape(nSamples, 1, 1),   (1, nStages + 1, N_S))
@@ -578,9 +578,12 @@ class AbstractSustain(ABC):
                 try:
                     ml_subtype[i]           = this_subtype
                 except:
-                    ml_subtype[i]           = this_subtype[0][0]
-                if this_prob_subtype.size == 1 and this_prob_subtype == 1:
-                    prob_ml_subtype[i]      = 1
+                    ml_subtype[i]           = this_subtype[0][0]             
+                if this_prob_subtype.size == 1:
+                    if this_prob_subtype == 1:
+                        prob_ml_subtype[i]  = 1
+                    else:
+                        prob_ml_subtype[i]  = this_prob_subtype
                 else:
                     try:
                         prob_ml_subtype[i]  = this_prob_subtype[this_subtype]
