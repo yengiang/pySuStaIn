@@ -525,8 +525,8 @@ class ZscoreSustain(AbstractSustain):
             assert len(subtype_titles) == N_S
         # Z-score colour definition
         if cmap == "original":
-            # Hard-coded colours: hooray!
-            colour_mat = np.array([[1, 0, 0], [1, 0, 1], [0, 0, 1], [0.5, 0, 1], [0, 1, 1], [0, 1, 0.5]])[:N_z]
+            # Hard-coded colours: z-score 1=blue, 2=magenta, 3=red
+            colour_mat = np.array([[0, 0, 1], [1, 0, 1], [1, 0, 0], [0.5, 0, 1], [0, 1, 1], [0, 1, 0.5]])[:N_z]
             # We only have up to 5 default colours, so double-check
             if colour_mat.shape[0] > N_z:
                 raise ValueError(f"Colours are only defined for {len(colour_mat)} z-scores!")
