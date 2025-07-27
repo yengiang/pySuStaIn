@@ -331,6 +331,14 @@ class AbstractSustain(ABC):
                     samples_likelihood_subj_test = self._evaluate_likelihood_setofsamples(sustainData_test, samples_sequence, samples_f)
 
                     mean_likelihood_subj_test    = np.mean(samples_likelihood_subj_test,axis=1)
+                    
+                    # Diagnostic: Check for zero/near-zero likelihoods
+                    zero_likelihood_count = np.sum(mean_likelihood_subj_test <= 1e-250)
+                    if zero_likelihood_count > 0:
+                        print(f"WARNING: {zero_likelihood_count}/{len(mean_likelihood_subj_test)} test subjects have near-zero likelihood (≤1e-250)")
+                        print(f"Fold {fold}, Subtype {s}: Min likelihood = {np.min(mean_likelihood_subj_test):.2e}, Max likelihood = {np.max(mean_likelihood_subj_test):.2e}")
+                        zero_indices = np.where(mean_likelihood_subj_test <= 1e-250)[0]
+                        print(f"Subject indices with zero likelihood: {zero_indices[:10]}...")  # Show first 10
 
                     ml_sequence_prev_EM         = ml_sequence_EM
                     ml_f_prev_EM                = ml_f_EM
@@ -392,11 +400,101 @@ class AbstractSustain(ABC):
                 else:
                     mean_likelihood_subj_test_cval    = np.concatenate((mean_likelihood_subj_test_cval, mean_likelihood_subj_test), axis=0)
 
+            # Diagnostic: Check final likelihood distribution before CVIC calculation
+            original_zero_count = np.sum(mean_likelihood_subj_test_cval <= 1e-250)
+            total_subjects = len(mean_likelihood_subj_test_cval)
+            if original_zero_count > 0:
+                print(f"CVIC Subtype {s}: {original_zero_count}/{total_subjects} subjects with likelihood ≤1e-250")
+                print(f"  Likelihood range: {np.min(mean_likelihood_subj_test_cval):.2e} to {np.max(mean_likelihood_subj_test_cval):.2e}")
+                print(f"  Mean likelihood: {np.mean(mean_likelihood_subj_test_cval):.2e}")
+            
+            # Add bounds checking in CVIC calculation to prevent infinite values
+            mean_likelihood_subj_test_cval = np.maximum(mean_likelihood_subj_test_cval, 1e-250)
             CVIC[s]                     = -2*sum(np.log(mean_likelihood_subj_test_cval))
 
         print("CVIC for each subtype model: " + str(CVIC))
 
         return CVIC, loglike_matrix
+
+    def diagnose_likelihood_issues(self, test_idxs, subtype_idx=0, fold_idx=0):
+        """
+        Diagnostic function to investigate likelihood calculation issues
+        
+        Parameters:
+        - test_idxs: cross-validation test indices
+        - subtype_idx: which subtype model to check (0 = 1 subtype, 1 = 2 subtypes, etc.)
+        - fold_idx: which fold to examine
+        """
+        import numpy as np
+        import os
+        from pathlib import Path
+        import pickle
+        
+        pickle_dir = os.path.join(self.output_folder, 'pickle_files')
+        
+        # Load the specific fold/subtype model
+        pickle_filename = os.path.join(pickle_dir, 
+                                     f'{self.dataset_name}_fold{fold_idx}_subtype{subtype_idx}.pickle')
+        
+        if not os.path.exists(pickle_filename):
+            print(f"Pickle file not found: {pickle_filename}")
+            return None
+            
+        with open(pickle_filename, 'rb') as f:
+            loaded_vars = pickle.load(f)
+            
+        # Get test data
+        indx_test = test_idxs[fold_idx]
+        sustainData_test = self.__sustainData.reindex(indx_test)
+        
+        # Check individual sample likelihoods
+        samples_sequence = loaded_vars["samples_sequence"]
+        samples_f = loaded_vars["samples_f"]
+        
+        print(f"\n=== LIKELIHOOD DIAGNOSTIC ===")
+        print(f"Fold {fold_idx}, Subtype model {subtype_idx+1}")
+        print(f"Test subjects: {len(indx_test)}")
+        print(f"MCMC samples: {samples_sequence.shape[2]}")
+        print(f"Number of subtypes: {samples_sequence.shape[0]}")
+        
+        # Calculate likelihood for each MCMC sample
+        likelihood_samples = self._evaluate_likelihood_setofsamples(
+            sustainData_test, samples_sequence, samples_f)
+        
+        mean_likelihood = np.mean(likelihood_samples, axis=1)
+        
+        print(f"\nLikelihood Statistics:")
+        print(f"  Min likelihood: {np.min(mean_likelihood):.2e}")
+        print(f"  Max likelihood: {np.max(mean_likelihood):.2e}")
+        print(f"  Mean likelihood: {np.mean(mean_likelihood):.2e}")
+        print(f"  Median likelihood: {np.median(mean_likelihood):.2e}")
+        
+        # Count problematic subjects
+        zero_count = np.sum(mean_likelihood == 0.0)
+        near_zero_count = np.sum(mean_likelihood <= 1e-250)
+        very_low_count = np.sum(mean_likelihood <= 1e-100)
+        
+        print(f"\nProblematic Subjects:")
+        print(f"  Exactly zero likelihood: {zero_count}")
+        print(f"  ≤ 1e-250 likelihood: {near_zero_count}")
+        print(f"  ≤ 1e-100 likelihood: {very_low_count}")
+        
+        if near_zero_count > 0:
+            problem_indices = np.where(mean_likelihood <= 1e-250)[0]
+            print(f"  Subject indices with near-zero likelihood: {problem_indices}")
+            
+        # Check individual MCMC samples for consistency
+        print(f"\nMCMC Sample Consistency:")
+        for i in range(min(5, len(mean_likelihood))):  # Check first 5 subjects
+            subj_likelihoods = likelihood_samples[i, :]
+            print(f"  Subject {i}: range {np.min(subj_likelihoods):.2e} to {np.max(subj_likelihoods):.2e}")
+            
+        return {
+            'mean_likelihood': mean_likelihood,
+            'likelihood_samples': likelihood_samples,
+            'zero_count': zero_count,
+            'near_zero_count': near_zero_count
+        }
 
 
     def combine_cross_validated_sequences(self, N_subtypes, N_folds, plot_format="png", **kwargs):
